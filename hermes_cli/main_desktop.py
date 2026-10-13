@@ -165,9 +165,28 @@ def _desktop_packaged_executable_in(release_dir: Path) -> Optional[Path]:
             release_dir / d / "Hermes.exe" for d in ("win-unpacked", "win-ia32-unpacked", "win-arm64-unpacked")
         ]
     else:
+        commit = os.environ.get("HERMES_BUILD_COMMIT", "") if sys.platform == "linux" else ""
+        fixed_commit = bool(re.fullmatch(r"[a-f0-9]{40}", commit))
+        names = ("hermes", "Hermes")
+        if fixed_commit:
+            from hermes_cli.steward import read_install_stamp
+
+            # These are the canonical bases in apps/desktop/product-identity.cjs.
+            display_base = {
+                "": "Hermes", "light": "Hermes Light", "bundled": "Hermes Agent",
+            }.get(os.environ.get("HERMES_DESKTOP_VARIANT", ""))
+            if display_base is None or os.environ.get("_HERMES_CHANNEL_REQUEST_JSON"):
+                return None
+            names = (f"{display_base} {commit[:7]}",)
         candidates = [
-            release_dir / d / n for d in ("linux-unpacked", "linux-arm64-unpacked") for n in ("hermes", "Hermes")
+            release_dir / d / n for d in ("linux-unpacked", "linux-arm64-unpacked") for n in names
         ]
+        if fixed_commit:
+            # The short filename alone cannot distinguish commits sharing its prefix.
+            candidates = [
+                p for p in candidates
+                if p.is_file() and read_install_stamp(p.parent / "resources").get("commit") == commit
+            ]
 
     existing = [p for p in candidates if p.exists()]
     if not existing:
